@@ -1,91 +1,74 @@
-#include <esp_now.h>
-#include <WiFi.h>
+/**************************************************************************/
+/*
+        Distributed with a free-will license.
+        Use it any way you want, profit or free, provided it fits in the licenses of its associated works.
+        SI7050
+        This code is designed to work with the SI7050_I2CADC I2C Mini Module available from ControlEverything.com.
+        https://www.controleverything.com/content/Temperature?sku=SI7050_I2CS#tabs-0-product_tabset-2
+*/
+/**************************************************************************/
 #include <Arduino.h>
+#include <Wire.h>
+#include <SI7050.h>   //https://github.com/ncdcommunity/Arduino_Library_SI7050_Temperature_Sensor.git
 
-uint8_t broadcastAddress[] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF}; //REVIEW, this is a broadcast address
+SI7050 si;
 
-typedef struct struct_message
+void setup(void) 
 {
-  int temperature1;
-  int temperature2;
-} struct_message;
+    Serial.begin(115200);
 
-struct_message myData;
+    // The address can be changed making the option of connecting multiple devices
+    si.getAddr_SI7050(SI7050_DEFAULT_ADDRESS);   // 0x40, 1000 000
 
-void OnDataSent(const uint8_t *mac_addr, esp_now_send_status_t status)
-{
-  Serial.print("\r\nLast Packet Send Status:\t");
-  Serial.println(status == ESP_NOW_SEND_SUCCESS ? "Delivery Success" : "Delivery Fail");
+    // The Temperature Measurement Mode can be changed via the following function
+
+    si.setTempMode(TEMP_NO_HOLD);        // Measure Temperature, No Hold Master Mode
+    // si.setTempMode(TEMP_HOLD);        // Measure Temperature, Hold Master Mode
+
+    si.begin();
+    delay(500);
 }
 
-#define timeMeasurePin 2
-
-void setup()
+void loop(void)
 {
-  pinMode(timeMeasurePin, OUTPUT);
+    byte error;
+    int8_t address;
 
-  Serial.begin(115200);
-  Serial.println("active");
+    address = si.si_i2cAddress;
+    // The i2c_scanner uses the return value of
+    // the Write.endTransmisstion to see if
+    // a device did acknowledge to the address.
+    Wire.beginTransmission(address);
+    error = Wire.endTransmission();
+    if (error == 0)
+    {
+        int16_t temp;
 
-  WiFi.mode(WIFI_STA);
+        Serial.println("Getting Temperature Readings from SI7050");
+        Serial.println(" ");
+        // Read and print out the temperature, then convert to C and F scales
+        temp = si.Measure_Temp();
+        float cTemp = ((175.72 * temp) / 65536.0) - 46.85;
+        float fTemp = cTemp * 1.8 + 32;
 
-  if (esp_now_init() != ESP_OK)
-  {
-    Serial.println("Error initializing ESP-NOW");
-    return;
-  }
+        // Output data to screen
+        Serial.print("Temperature Reading in Celsius: ");
+        Serial.print(cTemp);
+        Serial.println(" C");
+        Serial.print("Temperature Reading in Fahrenheit: ");
+        Serial.print(fTemp);
+        Serial.println(" F");
+        Serial.println(" ");
+        Serial.println("        ***************************        ");
+        Serial.println(" ");
+    }
+    else
+    {
+        Serial.println("SI7050 Disconnected !");
+        Serial.println(" ");
+        Serial.println("        ************        ");
+        Serial.println(" ");
+    }
 
-  //esp_now_register_send_cb(OnDataSent);
-
-  // Register peer
-  esp_now_peer_info_t peerInfo;
-  memcpy(peerInfo.peer_addr, broadcastAddress, 6);
-  peerInfo.channel = 6;
-  peerInfo.encrypt = false;
-
-  // Add peer
-  if (esp_now_add_peer(&peerInfo) != ESP_OK)
-  {
-    Serial.println("Failed to add peer");
-    return;
-  }
-}
-
-void loop()
-{
-// Set values to send
-#define maximumValueSendTest 32000
-#define minimumValueSendTest 1
-  //myData.id = 1;
-  //Serial.println("start");
-  if (myData.temperature1 < maximumValueSendTest)
-  {
-    myData.temperature1++;
-  }
-  else
-  {
-    myData.temperature1 = minimumValueSendTest;
-  }
-  if (myData.temperature2 > minimumValueSendTest)
-  {
-    myData.temperature2--;
-  }
-  else
-  {
-    myData.temperature2 = maximumValueSendTest;
-  }
-
-  digitalWrite(timeMeasurePin, HIGH); //for time logging with scope
-  esp_err_t result = esp_now_send(broadcastAddress, (uint8_t *)&myData, sizeof(myData));
-  digitalWrite(timeMeasurePin, LOW); //for time logging with scope
-
-  if (result == ESP_OK)
-  {
-    // Serial.println("Sent with success");
-  }
-  else
-  {
-    Serial.println("Error sending the data");
-  }
-  delay(100);
+    delay(1000);
 }
